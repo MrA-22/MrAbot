@@ -16,6 +16,11 @@ import qrcode from "qrcode";
 import axios from "axios"; 
 import { connectMongo } from "./mongo.js"
 import { useMongoAuthState } from "./auth.js"
+import fs from 'fs';
+if (fs.existsSync('./bot/session')) {
+    fs.rmSync('./bot/session', { recursive: true, force: true });
+    console.log('🗑️ Folder sesi rusak berhasil dihapus otomatis oleh sistem!');
+}
 
 console.log = function (...args) {
 

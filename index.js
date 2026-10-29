@@ -1,5 +1,5 @@
 
-import { makeWASocket, DisconnectReason, fetchLatestBaileysVersion } from "baileys";
+import { makeWASocket, DisconnectReason, fetchLatestBaileysVersion } from "@whiskeysockets/baileys";
 import pino from "pino";
 import chalk from "chalk";
 import figlet from "figlet";

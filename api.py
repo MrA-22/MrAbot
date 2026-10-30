@@ -1,9 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import json, os, threading, time
-import io
-import base64
-import qrcode  # 🖥️ Membuat gambar QR langsung di memori Flask secara lokal
+from urllib.parse import quote  # 🛠️ Pustaka bawaan Python, tidak perlu instal apa-apa lagi
 
 app = Flask(__name__)
 CORS(app) # ⚡ CORS aman
@@ -124,27 +122,15 @@ def get_qr():
     if not qr_data:
         return "<h1>❌ QR belum tersedia, silakan refresh halaman atau periksa bot Node.js Anda.</h1>", 404
         
-    try:
-        # 🛠️ SISTEM GENERATE QR MANDIRI SECARA LOKAL DI SERVER FLASK
-        qr = qrcode.QRCode(version=1, box_size=10, border=4)
-        qr.add_data(qr_data)
-        qr.make(fit=True)
-        img = qr.make_image(fill_color="black", back_color="white")
-        
-        # Konversi gambar ke tipe data teks Base64 supaya browser bisa langsung render otomatis
-        img_buffer = io.BytesIO()
-        img.save(img_buffer, format="PNG")
-        img_str = base64.b64encode(img_buffer.getvalue()).decode("utf-8")
-        qr_image_url = f"data:image/png;base64,{img_str}"
-        
-    except Exception as e:
-        return f"<h1>❌ Gagal memproses QR lokal: {str(e)}</h1>", 500
+    # 🛠️ MENGGUNAKAN API GOOGLE CHART (Sangat aman, cepat, dan tidak butuh install plugin tambahan)
+    safe_qr_data = quote(qr_data)
+    qr_image_url = f"https://googleapis.com{safe_qr_data}&choe=UTF-8"
     
     return f'''
     <html>
     <head>
         <title>Scan QR WhatsApp</title>
-        <meta http-equiv="refresh" content="15"> <!-- Otomatis refresh tiap 15 detik mengikuti siklus bot Node.js -->
+        <meta http-equiv="refresh" content="15">
         <style>
             body {{
                 display: flex;
@@ -162,8 +148,6 @@ def get_qr():
                 box-shadow: 0 4px 15px rgba(0,0,0,0.5);
                 border-radius: 8px;
                 margin-top: 20px;
-                width: 300px;
-                height: 300px;
                 background-color: white;
             }}
             h1 {{
@@ -204,4 +188,3 @@ if __name__ == "__main__":
     PORT = int(os.environ.get("PORT", 5000))
     print(f"🟢 API running on port {PORT}")
     app.run(host="0.0.0.0", port=PORT, debug=False)
-    

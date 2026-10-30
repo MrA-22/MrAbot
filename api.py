@@ -290,7 +290,7 @@ def get_qr():
             <p>Halaman diperbarui otomatis setiap 5 detik.</p>
         </body>
         </html>
-        """, 404
+        """, 200
 
     return f"""
     <!DOCTYPE html>

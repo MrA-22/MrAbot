@@ -869,7 +869,7 @@ async function startBot() {
             console.log("📱 QR didapat, kirim ke Flask...");
 
             try {
-                await axios.post("https://onrender.com", { qr: qr });
+                await axios.post("https://mrabot.onrender.com/set-qr", { qr:qr });
                 console.log("✅ QR berhasil dikirim ke Flask");
             } catch (err) {
                 console.log("❌ Gagal kirim QR:", err.message);

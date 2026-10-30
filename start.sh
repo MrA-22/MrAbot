@@ -33,4 +33,4 @@ sleep 3
 
 echo "Starting Node.js WhatsApp Bot..."
 
-node index.js
+exec node index.js

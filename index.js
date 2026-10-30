@@ -874,9 +874,20 @@ async function startBot() {
             } catch (err) {
                 console.log("❌ Gagal kirim QR:", err.message);
             }
+
+            // 🚀 AUTOMATIC RESET JIKA QR TIDAK DI-SCAN DALAM 45 DETIK
+            if (global.qrResetTimeout) clearTimeout(global.qrResetTimeout);
+            global.qrResetTimeout = setTimeout(() => {
+                if (sock && !sock.user) {
+                    console.log("🔄 QR kedaluwarsa, merestart koneksi untuk meminta QR baru...");
+                    sock.end(new Error("QR Expired Timeout"));
+                }
+            }, 45000); 
         }
 
         if (connection === "close") {
+            // Bersihkan timeout jika koneksi ditutup
+            if (global.qrResetTimeout) clearTimeout(global.qrResetTimeout);
 
             const statusCode = lastDisconnect?.error?.output?.statusCode
 
@@ -901,6 +912,8 @@ async function startBot() {
         }
 
         if (connection === "open") {
+            // Bersihkan timeout jika berhasil login
+            if (global.qrResetTimeout) clearTimeout(global.qrResetTimeout);
 
             console.log("✅ Bot berhasil terhubung!")
             await new Promise(r => setTimeout(r, 5000))

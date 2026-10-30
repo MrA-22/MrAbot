@@ -878,9 +878,7 @@ async function startBot() {
             try {
                 const qrImage = await qrcode.toDataURL(qr);
 
-                const flaskUrl =
-                    process.env.FLASK_API_URL ||
-                    "http://127.0.0.1:5001";
+                const flaskUrl = "http://127.0.0.1:5001";
 
                 const response = await fetch(`${flaskUrl}/set-qr`, {
                     method: "POST",

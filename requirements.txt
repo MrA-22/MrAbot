@@ -1,6 +1,7 @@
 yt-dlp
 requests
-playwright
+flask
 beautifulsoup4
-Flask
 flask-cors
+qrcode
+pillow

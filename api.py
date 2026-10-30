@@ -12,34 +12,6 @@ STATS_FILE = "./bot_stats.json"
 LOG_FILE = "./bot.log"
 CMD_FILE = "./command_queue.txt"
 
-# ---------------- UTILS ----------------
-def safe_read_json(path, default):
-    if os.path.exists(path):
-        try:
-            with open(path, "r") as f:
-                return json.load(f)
-        except:
-            return default
-    return default
-
-def safe_write_json(path, data):
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
-
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-import json, os, threading, time
-
-app = Flask(__name__)
-CORS(app)  # ⚡ CORS aman
-
-# ---------------- FILE PATH ----------------
-STATUS_FILE = "./bot_status.txt"
-GROUP_FILE = "./group_list.json"
-STATS_FILE = "./bot_stats.json"
-LOG_FILE = "./bot.log"
-CMD_FILE = "./command_queue.txt"
-
 # ---------------- DATA QR SEMENTARA ----------------
 QR_GLOBAL_DATA = {"qr": None}
 
@@ -132,7 +104,7 @@ def get_logs():
     except Exception as e:
         return f"Error: {str(e)}"
 
-# ------------------- QR ENDPOINTS (POSISI SUDAH BENAR) -------------------
+# ------------------- QR ENDPOINTS -------------------
 @app.route("/set-qr", methods=["POST"])
 def set_qr():
     try:
@@ -151,7 +123,28 @@ def set_qr():
 
 @app.route("/get-qr", methods=["GET"])
 def get_qr():
-    return jsonify(QR_GLOBAL_DATA)
+    qr_data = QR_GLOBAL_DATA.get("qr")
+    if not qr_data:
+        return "<h1>❌ QR belum tersedia, silakan refresh halaman atau periksa bot Node.js Anda.</h1>", 404
+        
+    # Render gambar QR otomatis di browser dengan HTML & API generator gratis
+    return f'''
+    <html>
+        <head>
+            <title>Scan QR WhatsApp</title>
+            <style>
+                body {{ display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: Arial, sans-serif; background-color: #121212; color: white; }}
+                img {{ border: 15px solid white; box-shadow: 0 4px 15px rgba(0,0,0,0.5); border-radius: 8px; margin-top: 20px; }}
+                h1 {{ font-size: 24px; letter-spacing: 1px; }}
+            </style>
+        </head>
+        <body>
+            <h1>Scan QR WhatsApp</h1>
+            <p>Buka WhatsApp di HP Anda > Perangkat Tautan > Tautkan Perangkat</p>
+            <img src="https://qrserver.com{qr_data}" />
+        </body>
+    </html>
+    '''
 
 # ------------------- ROOT -------------------
 @app.route("/", methods=["GET"])
@@ -171,4 +164,5 @@ for fpath, default in [(STATUS_FILE, "STOPPED"), (CMD_FILE, []), (GROUP_FILE, []
 if __name__ == "__main__":
     PORT = int(os.environ.get("PORT", 5000))
     print(f"🟢 API running on port {PORT}")
-    app.run(host="0.0.0.0", port=PORT, debug=False)  # debug=False direkomendasikan untuk production Railway
+    app.run(host="0.0.0.0", port=PORT, debug=False)
+    

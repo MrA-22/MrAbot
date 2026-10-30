@@ -785,6 +785,7 @@ setInterval(async () => {
 
 }, 60000)
 
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -796,21 +797,70 @@ app.get("/", (req, res) => {
 // QR ENDPOINT
 app.get("/qr", async (req, res) => {
     console.log("🔥 /qr diakses");
+    tampilkanQR(req, res);
+});
 
+// QR ENDPOINT untuk URL /get-qr
+app.get("/get-qr", async (req, res) => {
+    console.log("🔥 /get-qr diakses");
+    tampilkanQR(req, res);
+});
+
+// Fungsi untuk menampilkan QR
+async function tampilkanQR(req, res) {
     if (!qrGlobal) {
-        return res.send("❌ QR belum tersedia, bot mungkin sudah login.");
+        return res.status(404).send(`
+            <h2>QR belum tersedia</h2>
+            <p>Bot mungkin sudah login atau QR belum dibuat.</p>
+        `);
     }
 
     try {
         const qrDataUrl = await qrcode.toDataURL(qrGlobal);
+
         res.send(`
-            <h1>Scan QR WhatsApp</h1>
-            <img src="${qrDataUrl}" />
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>MR.A BOT - Scan QR</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <meta http-equiv="refresh" content="20">
+                <style>
+                    body {
+                        background: #111;
+                        color: white;
+                        font-family: Arial;
+                        text-align: center;
+                        padding: 30px;
+                    }
+                    img {
+                        width: 280px;
+                        max-width: 90%;
+                        background: white;
+                        padding: 12px;
+                        border-radius: 12px;
+                    }
+                </style>
+            </head>
+            <body>
+                <h2>MR.A BOT - Scan QR WhatsApp</h2>
+                <p>Scan QR menggunakan WhatsApp.</p>
+                <img src="${qrDataUrl}" alt="QR WhatsApp">
+                <p>Halaman diperbarui setiap 20 detik.</p>
+            </body>
+            </html>
         `);
     } catch (err) {
-        res.send("❌ Error generate QR: " + err.message);
+        console.error("❌ Error generate QR:", err);
+        res.status(500).send("Gagal membuat QR: " + err.message);
     }
+}
+
+// JALANKAN SERVER SATU KALI SAJA
+app.listen(PORT, "0.0.0.0", () => {
+    console.log(`🌐 Server jalan di port ${PORT}`);
 });
+
 
 async function startBot() {
     await new Promise(r => setTimeout(r, 3000))
@@ -912,14 +962,6 @@ async function startBot() {
                 }
             }, 45000);
         }
-
-        // ==============================
-        // START SERVER
-       // ==============================
-
-        app.listen(PORT, "0.0.0.0", () => {
-            console.log(`🌐 Server jalan di port ${PORT}`);
-        });
         
         // ======================
         // CONNECTION CLOSED

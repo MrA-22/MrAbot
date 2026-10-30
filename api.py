@@ -122,3 +122,28 @@ if __name__ == "__main__":
     PORT = int(os.environ.get("PORT", 5000))
     print(f"🟢 API running on port {PORT}")
     app.run(host="0.0.0.0", port=PORT, debug=True)
+
+# ------------------- DATA QR SEMENTARA -------------------
+QR_GLOBAL_DATA = {"qr": None}
+
+@app.route("/set-qr", methods=["POST"])
+def set_qr():
+    try:
+        data = request.json
+        qr_code = data.get("qr")
+        
+        if not qr_code:
+            return jsonify({"status": "error", "error": "QR data kosong"}), 400
+            
+        QR_GLOBAL_DATA["qr"] = qr_code
+        append_log("QR Code berhasil diperbarui dari Node.js")
+        return jsonify({"status": "success", "message": "QR terupdate di Flask"}), 200
+        
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+@app.route("/get-qr", methods=["GET"])
+def get_qr():
+    # Rute ini untuk dipanggil oleh Frontend React Anda nanti
+    return jsonify(QR_GLOBAL_DATA)
+    

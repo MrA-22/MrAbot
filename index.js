@@ -861,71 +861,57 @@ async function startBot() {
        sock.ev.on("connection.update", async (update) => {
        const { connection, lastDisconnect, qr } = update;
 
-       if (qr) {
-         qrGlobal = qr;
+       
+if (qr) {
+    qrGlobal = qr;
 
-         console.log("📱 QR didapat!");
-         console.log("🌐 Buka endpoint /qr untuk melihat QR Code");
+    console.log("📱 QR WhatsApp berhasil didapat!");
 
-         if (global.qrResetTimeout) {
-         clearTimeout(global.qrResetTimeout);
-      }
+    try {
+        const qrImage = await qrcode.toDataURL(qr);
 
-         global.qrResetTimeout = setTimeout(() => {
-            if (sock && !sock.user) {
-              console.log("🔄 QR kedaluwarsa, meminta QR baru...");
-              sock.end(new Error("QR Expired Timeout"));
-            }
-         }, 45000);
-       }
+        const flaskUrl = process.env.FLASK_API_URL;
 
-        if (connection === "close") {
-            // Bersihkan timeout jika koneksi ditutup
-            if (global.qrResetTimeout) clearTimeout(global.qrResetTimeout);
-
-            const statusCode = lastDisconnect?.error?.output?.statusCode
-
-            console.log("❌ Koneksi terputus. Status:", statusCode)
-
-            BOT_ACTIVE = false
-
-            if (statusCode !== DisconnectReason.loggedOut) {
-
-                console.log("🔄 Reconnecting dalam 10 detik...")
-
-                setTimeout(() => {
-                    startBot()
-                }, 10000)
-
-            } else {
-
-                console.log("🚪 Device logout. Hapus session lalu scan ulang.")
-
-            }
-
+        if (!flaskUrl) {
+            throw new Error("FLASK_API_URL belum diatur!");
         }
 
-        if (connection === "open") {
-            // Bersihkan timeout jika berhasil login
-            if (global.qrResetTimeout) clearTimeout(global.qrResetTimeout);
-
-            console.log("✅ Bot berhasil terhubung!")
-            await new Promise(r => setTimeout(r, 5000))
-            await updatePrayerTimes()
-
-            await updateGroupCache()
-
-            if (!schedulerStarted) {
-                startScheduler()
-                schedulerStarted = true
+        const response = await fetch(
+            `${flaskUrl}/set-qr`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    qr: qrImage
+                })
             }
-            setInterval(updateGroupCache, 60 * 60 * 1000)
+        );
 
-            startDashboardBridge(sock, "6281344195326")
+        const result = await response.json();
 
+        if (response.ok) {
+            console.log("✅ QR berhasil dikirim ke Flask!");
+        } else {
+            console.error("❌ Flask menolak QR:", result);
         }
 
-    });
+    } catch (error) {
+        console.error("❌ Gagal mengirim QR:", error.message);
+    }
+
+    if (global.qrResetTimeout) {
+        clearTimeout(global.qrResetTimeout);
+    }
+
+    global.qrResetTimeout = setTimeout(() => {
+        if (sock && !sock.user) {
+            console.log("🔄 QR kedaluwarsa, meminta QR baru...");
+            sock.end(new Error("QR Expired Timeout"));
+        }
+    }, 45000);
+}
 
     // ======================
     // QC scheduler

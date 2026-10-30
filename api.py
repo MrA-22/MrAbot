@@ -103,7 +103,7 @@ def get_logs():
         return f"Error: {str(e)}"
 
 # ------------------- QR ENDPOINTS -------------------
-@app.route("/set-qr", methods=["POST"])  # 🛠️ DIKEMBALIKAN: Endpoint krusial untuk menerima data dari Node.js
+@app.route("/set-qr", methods=["POST"])  
 def set_qr():
     try:
         data = request.json
@@ -120,7 +120,7 @@ def set_qr():
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)}), 500
 
-@app.route("/get-qr", methods=["GET"])  # 🛠️ DIPERBAIKI: Simbol kelebihan @ sudah dihapus
+@app.route("/get-qr", methods=["GET"])  
 def get_qr():
     qr_data = QR_GLOBAL_DATA.get("qr")
     
@@ -139,7 +139,7 @@ def get_qr():
         </div>
         ''', 200
 
-    # 3. JIKA DATA AMAN, GENERATE MENGGUNAKAN GOOGLE CHART API YANG VALID
+    # 3. JIKA DATA AMAN, GENERATE MENGGUNAKAN GOOGLE CHART API YANG BENAR
     safe_qr_data = quote(str(qr_data))
     qr_image_url = f"https://googleapis.com{safe_qr_data}&choe=UTF-8"
     

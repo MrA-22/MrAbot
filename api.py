@@ -1,7 +1,9 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import json, os, threading, time
-from urllib.parse import quote  # 🛠️ Ditambahkan untuk memperbaiki enkripsi URL teks QR
+import io
+import base64
+import qrcode  # 🖥️ Membuat gambar QR langsung di memori Flask secara lokal
 
 app = Flask(__name__)
 CORS(app) # ⚡ CORS aman
@@ -122,15 +124,27 @@ def get_qr():
     if not qr_data:
         return "<h1>❌ QR belum tersedia, silakan refresh halaman atau periksa bot Node.js Anda.</h1>", 404
         
-    # 🛠️ MEMPERBAIKI URL GENERATOR (Mengamankan string teks agar bisa dibaca menjadi gambar QR)
-    safe_qr_data = quote(qr_data)
-    qr_image_url = f"https://qrserver.com{safe_qr_data}"
+    try:
+        # 🛠️ SISTEM GENERATE QR MANDIRI SECARA LOKAL DI SERVER FLASK
+        qr = qrcode.QRCode(version=1, box_size=10, border=4)
+        qr.add_data(qr_data)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        # Konversi gambar ke tipe data teks Base64 supaya browser bisa langsung render otomatis
+        img_buffer = io.BytesIO()
+        img.save(img_buffer, format="PNG")
+        img_str = base64.b64encode(img_buffer.getvalue()).decode("utf-8")
+        qr_image_url = f"data:image/png;base64,{img_str}"
+        
+    except Exception as e:
+        return f"<h1>❌ Gagal memproses QR lokal: {str(e)}</h1>", 500
     
     return f'''
     <html>
     <head>
         <title>Scan QR WhatsApp</title>
-        <meta http-equiv="refresh" content="15"> <!-- Otomatis refresh halaman tiap 15 detik agar QR selalu segar -->
+        <meta http-equiv="refresh" content="15"> <!-- Otomatis refresh tiap 15 detik mengikuti siklus bot Node.js -->
         <style>
             body {{
                 display: flex;
@@ -148,6 +162,8 @@ def get_qr():
                 box-shadow: 0 4px 15px rgba(0,0,0,0.5);
                 border-radius: 8px;
                 margin-top: 20px;
+                width: 300px;
+                height: 300px;
                 background-color: white;
             }}
             h1 {{

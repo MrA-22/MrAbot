@@ -855,64 +855,116 @@ async function startBot() {
         }
     });
 
+
+    
     // ======================
+    // WHATSAPP CONNECTION
     // ======================
-       sock.ev.on("creds.update", saveCreds);
-       sock.ev.on("connection.update", async (update) => {
-       const { connection, lastDisconnect, qr } = update;
 
-       
-if (qr) {
-    qrGlobal = qr;
+    sock.ev.on("creds.update", saveCreds);
 
-    console.log("📱 QR WhatsApp berhasil didapat!");
+    sock.ev.on("connection.update", async (update) => {
+        const { connection, lastDisconnect, qr } = update;
 
-    try {
-        const qrImage = await qrcode.toDataURL(qr);
+        // ======================
+        // GENERATE QR CODE
+        // ======================
 
-        const flaskUrl = process.env.FLASK_API_URL;
+        if (qr) {
+            qrGlobal = qr;
 
-        if (!flaskUrl) {
-            throw new Error("FLASK_API_URL belum diatur!");
-        }
+            console.log("📱 QR WhatsApp berhasil didapat!");
 
-        const response = await fetch(
-            `${flaskUrl}/set-qr`,
-            {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    qr: qrImage
-                })
+            try {
+                const qrImage = await qrcode.toDataURL(qr);
+
+                const flaskUrl =
+                    process.env.FLASK_API_URL ||
+                    "http://127.0.0.1:5001";
+
+                const response = await fetch(`${flaskUrl}/set-qr`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        qr: qrImage
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    console.log("✅ QR berhasil dikirim ke Flask!");
+                } else {
+                    console.error("❌ Flask menolak QR:", result);
+                }
+
+            } catch (error) {
+                console.error(
+                    "❌ Gagal mengirim QR:",
+                    error.message
+                );
             }
-        );
 
-        const result = await response.json();
+            // QR EXPIRED TIMEOUT
+            if (global.qrResetTimeout) {
+                clearTimeout(global.qrResetTimeout);
+            }
 
-        if (response.ok) {
-            console.log("✅ QR berhasil dikirim ke Flask!");
-        } else {
-            console.error("❌ Flask menolak QR:", result);
+            global.qrResetTimeout = setTimeout(() => {
+                if (sock && !sock.user) {
+                    console.log("🔄 QR kedaluwarsa, meminta QR baru...");
+                    sock.end(new Error("QR Expired Timeout"));
+                }
+            }, 45000);
         }
 
-    } catch (error) {
-        console.error("❌ Gagal mengirim QR:", error.message);
-    }
+        // ======================
+        // CONNECTION CLOSED
+        // ======================
 
-    if (global.qrResetTimeout) {
-        clearTimeout(global.qrResetTimeout);
-    }
+        if (connection === "close") {
+            const statusCode =
+                lastDisconnect?.error?.output?.statusCode;
 
-    global.qrResetTimeout = setTimeout(() => {
-        if (sock && !sock.user) {
-            console.log("🔄 QR kedaluwarsa, meminta QR baru...");
-            sock.end(new Error("QR Expired Timeout"));
+            console.log("❌ Koneksi terputus:", statusCode);
+
+            BOT_ACTIVE = false;
+            fs.writeFileSync("bot_status.txt", "OFFLINE");
+
+            if (statusCode !== DisconnectReason.loggedOut) {
+                console.log("🔄 Mencoba menghubungkan ulang...");
+
+                setTimeout(() => {
+                    startBot();
+                }, 5000);
+
+            } else {
+                console.log(
+                    "⚠️ WhatsApp logout. Silakan scan QR kembali."
+                );
+            }
         }
-    }, 45000);
-}
 
+        // ======================
+        // CONNECTION OPEN
+        // ======================
+
+        if (connection === "open") {
+            console.log("✅ WhatsApp berhasil terhubung!");
+
+            BOT_ACTIVE = true;
+            fs.writeFileSync("bot_status.txt", "RUNNING");
+
+            if (global.qrResetTimeout) {
+                clearTimeout(global.qrResetTimeout);
+                global.qrResetTimeout = null;
+            }
+        }
+    });
+    
+    
     // ======================
     // QC scheduler
     // ======================

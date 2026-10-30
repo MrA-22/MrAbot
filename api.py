@@ -103,27 +103,27 @@ def get_logs():
         return f"Error: {str(e)}"
 
 # ------------------- QR ENDPOINTS -------------------
-@app.route("/set-qr", methods=["POST"])
-def set_qr():
-    try:
-        data = request.json
-        qr_code = data.get("qr")
-        if not qr_code:
-            return jsonify({"status": "error", "error": "QR data kosong"}), 400
-        QR_GLOBAL_DATA["qr"] = qr_code
-        append_log("QR Code berhasil diperbarui dari Node.js")
-        return jsonify({"status": "success", "message": "QR terupdate di Flask"}), 200
-    except Exception as e:
-        return jsonify({"status": "error", "error": str(e)}), 500
-
-@app.route("/get-qr", methods=["GET"])
+@@app.route("/get-qr", methods=["GET"])
 def get_qr():
     qr_data = QR_GLOBAL_DATA.get("qr")
+    
+    # 1. PROTEKSI JIKA DATA SAMA SEKALI BELUM MASUK
     if not qr_data:
         return "<h1>❌ QR belum tersedia, silakan refresh halaman atau periksa bot Node.js Anda.</h1>", 404
         
-    # 🛠️ MENGGUNAKAN API GOOGLE CHART (Sangat aman, cepat, dan tidak butuh install plugin tambahan)
-    safe_qr_data = quote(qr_data)
+    # 2. PROTEKSI JIKA DATA YANG MASUK KOSONG / UNDEFINED DARI NODE.JS
+    if qr_data == "undefined" or qr_data == "null" or len(str(qr_data).strip()) < 5:
+        return f'''
+        <div style="background-color: #ff4d4d; color: white; padding: 20px; font-family: Arial; text-align: center; border-radius: 8px; margin: 20px;">
+            <h1>⚠️ DATA QR RUSAK DARI NODE.JS!</h1>
+            <p>Flask menerima data QR yang tidak valid.</p>
+            <p><b>Isi data asli yang diterima:</b> <code style="background: black; padding: 5px; border-radius: 4px;">{qr_data}</code></p>
+            <p>Periksa kembali bagian <code>client.on('qr', ...)</code> di bot Node.js Anda!</p>
+        </div>
+        ''', 200
+
+    # 3. JIKA DATA AMAN, GENERATE MENGGUNAKAN GOOGLE CHART API
+    safe_qr_data = quote(str(qr_data))
     qr_image_url = f"https://googleapis.com{safe_qr_data}&choe=UTF-8"
     
     return f'''
@@ -168,7 +168,6 @@ def get_qr():
     </body>
     </html>
     '''
-
 # ------------------- ROOT -------------------
 @app.route("/", methods=["GET"])
 def root():

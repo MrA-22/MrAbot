@@ -5,6 +5,7 @@ import json
 import os
 import time
 import re
+import html
 
 app = Flask(__name__)
 
@@ -73,7 +74,7 @@ def root():
     return jsonify({
         "status": "success",
         "message": "MR.A BOT API RUNNING",
-        "version": "1.0",
+        "version": "1.1",
         "endpoints": [
             "/status",
             "/groups",
@@ -116,7 +117,6 @@ def get_status():
 @app.route("/groups", methods=["GET"])
 def get_groups():
     groups = safe_read_json(GROUP_FILE, [])
-
     return jsonify(groups)
 
 
@@ -154,7 +154,6 @@ def get_progress():
 @app.route("/send-command", methods=["POST"])
 def send_command():
     data = request.get_json(silent=True) or {}
-
     cmd = data.get("command")
 
     if not isinstance(cmd, str) or not cmd.strip():
@@ -192,13 +191,13 @@ def get_logs():
             with open(LOG_FILE, "r", encoding="utf-8") as f:
                 lines = f.readlines()[-100:]
 
+            safe_lines = [
+                html.escape(line.strip())
+                for line in lines
+            ]
+
             return Response(
-                "<br>".join(
-                    line.strip().replace("&", "&amp;")
-                    .replace("<", "&lt;")
-                    .replace(">", "&gt;")
-                    for line in lines
-                ),
+                "<br>".join(safe_lines),
                 mimetype="text/html"
             )
 
@@ -231,10 +230,9 @@ def set_qr():
                 "error": "Data QR kosong"
             }), 400
 
-        # Validasi format Base64 PNG
         pattern = r"^data:image/png;base64,[A-Za-z0-9+/]+={0,2}$"
 
-        if not re.match(pattern, qr_image):
+        if not re.fullmatch(pattern, qr_image):
             return jsonify({
                 "status": "error",
                 "error": "Format QR PNG Base64 tidak valid"
@@ -247,7 +245,8 @@ def set_qr():
 
         return jsonify({
             "status": "success",
-            "message": "QR berhasil diperbarui"
+            "message": "QR berhasil diperbarui",
+            "updated_at": QR_GLOBAL_DATA["updated_at"]
         }), 200
 
     except Exception as e:
@@ -272,18 +271,23 @@ def get_qr():
         <!DOCTYPE html>
         <html>
         <head>
-            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <meta charset="UTF-8">
+            <meta name="viewport"
+                  content="width=device-width, initial-scale=1">
+            <meta http-equiv="refresh" content="5">
             <title>MR.A BOT QR</title>
         </head>
+
         <body style="
             background:#121212;
             color:white;
-            font-family:Arial;
+            font-family:Arial,sans-serif;
             text-align:center;
-            padding:50px;
+            padding:50px 20px;
         ">
             <h2>QR Belum Tersedia</h2>
-            <p>Tunggu sampai Node.js menghasilkan QR WhatsApp.</p>
+            <p>Menunggu Node.js menghasilkan QR WhatsApp...</p>
+            <p>Halaman diperbarui otomatis setiap 5 detik.</p>
         </body>
         </html>
         """, 404
@@ -292,9 +296,12 @@ def get_qr():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>MR.A BOT - Scan QR</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta charset="UTF-8">
+        <meta name="viewport"
+              content="width=device-width, initial-scale=1">
         <meta http-equiv="refresh" content="15">
+
+        <title>MR.A BOT - Scan QR</title>
 
         <style>
             * {{
@@ -362,7 +369,9 @@ def get_qr():
                 Pilih Perangkat Tertaut → Tautkan Perangkat.
             </p>
 
-            <p>Halaman diperbarui otomatis setiap 15 detik.</p>
+            <p>
+                Halaman diperbarui otomatis setiap 15 detik.
+            </p>
         </div>
     </body>
     </html>
@@ -411,7 +420,7 @@ for fpath, default in default_files:
 # =============================
 
 if __name__ == "__main__":
-    PORT = int(os.environ.get("PORT", 5000))
+    PORT = int(os.environ.get("FLASK_PORT", 5001))
 
     print(f"MR.A BOT API running on port {PORT}")
 
@@ -421,4 +430,3 @@ if __name__ == "__main__":
         debug=False,
         threaded=True
     )
-    

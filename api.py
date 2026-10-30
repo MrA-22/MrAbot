@@ -3,7 +3,7 @@ from flask_cors import CORS
 import json, os, threading, time
 
 app = Flask(__name__)
-CORS(app)  # ⚡ CORS aman
+CORS(app) # ⚡ CORS aman
 
 # ---------------- FILE PATH ----------------
 STATUS_FILE = "./bot_status.txt"
@@ -80,14 +80,11 @@ def send_command():
     cmd = data.get("command")
     if not cmd:
         return jsonify({"status": "error", "error": "Command kosong"})
-
     try:
         with open(CMD_FILE, "a") as f:
             f.write(cmd + "\n")
-        
         append_log(f"Command queued: {cmd}")
         return jsonify({"status": "ok", "command": cmd})
-    
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)})
 
@@ -110,14 +107,11 @@ def set_qr():
     try:
         data = request.json
         qr_code = data.get("qr")
-        
         if not qr_code:
             return jsonify({"status": "error", "error": "QR data kosong"}), 400
-            
         QR_GLOBAL_DATA["qr"] = qr_code
         append_log("QR Code berhasil diperbarui dari Node.js")
         return jsonify({"status": "success", "message": "QR terupdate di Flask"}), 200
-        
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)}), 500
 
@@ -127,22 +121,39 @@ def get_qr():
     if not qr_data:
         return "<h1>❌ QR belum tersedia, silakan refresh halaman atau periksa bot Node.js Anda.</h1>", 404
         
-    # Render gambar QR otomatis di browser dengan HTML & API generator gratis
+    # Perbaikan URL generator QR pada tag <img> di bawah ini:
     return f'''
     <html>
-        <head>
-            <title>Scan QR WhatsApp</title>
-            <style>
-                body {{ display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: Arial, sans-serif; background-color: #121212; color: white; }}
-                img {{ border: 15px solid white; box-shadow: 0 4px 15px rgba(0,0,0,0.5); border-radius: 8px; margin-top: 20px; }}
-                h1 {{ font-size: 24px; letter-spacing: 1px; }}
-            </style>
-        </head>
-        <body>
-            <h1>Scan QR WhatsApp</h1>
-            <p>Buka WhatsApp di HP Anda > Perangkat Tautan > Tautkan Perangkat</p>
-            <img src="https://qrserver.com{qr_data}" />
-        </body>
+    <head>
+        <title>Scan QR WhatsApp</title>
+        <style>
+            body {{
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+                font-family: Arial, sans-serif;
+                background-color: #121212;
+                color: white;
+            }}
+            img {{
+                border: 15px solid white;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+                border-radius: 8px;
+                margin-top: 20px;
+            }}
+            h1 {{
+                font-size: 24px;
+                letter-spacing: 1px;
+            }}
+        </style>
+    </head>
+    <body>
+        <h1>Scan QR WhatsApp</h1>
+        <p>Buka WhatsApp di HP Anda > Perangkat Tautan > Tautkan Perangkat</p>
+        <img src="https://qrserver.com{qr_data}" />
+    </body>
     </html>
     '''
 

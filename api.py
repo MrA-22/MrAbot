@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import json, os, threading, time
-from urllib.parse import quote  # 🛠️ Pustaka bawaan Python, tidak perlu instal apa-apa lagi
+from urllib.parse import quote  # 🛠️ Mengamankan string teks QR tanpa install plugin luar
 
 app = Flask(__name__)
 CORS(app) # ⚡ CORS aman
@@ -103,7 +103,24 @@ def get_logs():
         return f"Error: {str(e)}"
 
 # ------------------- QR ENDPOINTS -------------------
-@@app.route("/get-qr", methods=["GET"])
+@app.route("/set-qr", methods=["POST"])  # 🛠️ DIKEMBALIKAN: Endpoint krusial untuk menerima data dari Node.js
+def set_qr():
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"status": "error", "error": "JSON data kosong"}), 400
+            
+        qr_code = data.get("qr")
+        if not qr_code:
+            return jsonify({"status": "error", "error": "Variabel QR data kosong"}), 400
+            
+        QR_GLOBAL_DATA["qr"] = qr_code
+        append_log("QR Code berhasil diperbarui dari Node.js")
+        return jsonify({"status": "success", "message": "QR terupdate di Flask"}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+@app.route("/get-qr", methods=["GET"])  # 🛠️ DIPERBAIKI: Simbol kelebihan @ sudah dihapus
 def get_qr():
     qr_data = QR_GLOBAL_DATA.get("qr")
     
@@ -122,7 +139,7 @@ def get_qr():
         </div>
         ''', 200
 
-    # 3. JIKA DATA AMAN, GENERATE MENGGUNAKAN GOOGLE CHART API
+    # 3. JIKA DATA AMAN, GENERATE MENGGUNAKAN GOOGLE CHART API YANG VALID
     safe_qr_data = quote(str(qr_data))
     qr_image_url = f"https://googleapis.com{safe_qr_data}&choe=UTF-8"
     
@@ -149,6 +166,8 @@ def get_qr():
                 border-radius: 8px;
                 margin-top: 20px;
                 background-color: white;
+                width: 300px;
+                height: 300px;
             }}
             h1 {{
                 font-size: 24px;
@@ -168,6 +187,7 @@ def get_qr():
     </body>
     </html>
     '''
+
 # ------------------- ROOT -------------------
 @app.route("/", methods=["GET"])
 def root():

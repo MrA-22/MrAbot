@@ -812,11 +812,6 @@ app.get("/qr", async (req, res) => {
     }
 });
 
-// LISTEN FIX
-app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🌐 Server jalan di port ${PORT}`);
-});
-
 async function startBot() {
     await new Promise(r => setTimeout(r, 3000))
     await connectMongo()
@@ -918,6 +913,14 @@ async function startBot() {
             }, 45000);
         }
 
+        // ==============================
+        // START SERVER
+       // ==============================
+
+        app.listen(PORT, "0.0.0.0", () => {
+            console.log(`🌐 Server jalan di port ${PORT}`);
+        });
+        
         // ======================
         // CONNECTION CLOSED
         // ======================

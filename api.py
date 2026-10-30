@@ -102,91 +102,95 @@ def get_logs():
     except Exception as e:
         return f"Error: {str(e)}"
 
+
 # ------------------- QR ENDPOINTS -------------------
-@app.route("/set-qr", methods=["POST"])  
+
+@app.route("/set-qr", methods=["POST"])
 def set_qr():
     try:
-        data = request.json
-        if not data:
-            return jsonify({"status": "error", "error": "JSON data kosong"}), 400
-            
-        qr_code = data.get("qr")
-        if not qr_code:
-            return jsonify({"status": "error", "error": "Variabel QR data kosong"}), 400
-            
-        QR_GLOBAL_DATA["qr"] = qr_code
-        append_log("QR Code berhasil diperbarui dari Node.js")
-        return jsonify({"status": "success", "message": "QR terupdate di Flask"}), 200
+        data = request.get_json(silent=True)
+
+        if not data or not data.get("qr"):
+            return jsonify({
+                "status": "error",
+                "error": "Data QR kosong"
+            }), 400
+
+        qr_image = data["qr"]
+
+        if not qr_image.startswith("data:image/png;base64,"):
+            return jsonify({
+                "status": "error",
+                "error": "Format QR tidak valid"
+            }), 400
+
+        QR_GLOBAL_DATA["qr"] = qr_image
+
+        return jsonify({
+            "status": "success",
+            "message": "QR berhasil diperbarui"
+        }), 200
+
     except Exception as e:
-        return jsonify({"status": "error", "error": str(e)}), 500
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
 
-@app.route("/get-qr", methods=["GET"])  
+
+@app.route("/get-qr", methods=["GET"])
 def get_qr():
-    qr_data = QR_GLOBAL_DATA.get("qr")
-    
-    # 1. PROTEKSI JIKA DATA SAMA SEKALI BELUM MASUK
-    if not qr_data:
-        return "<h1>❌ QR belum tersedia, silakan refresh halaman atau periksa bot Node.js Anda.</h1>", 404
-        
-    # 2. PROTEKSI JIKA DATA YANG MASUK KOSONG / UNDEFINED DARI NODE.JS
-    if qr_data == "undefined" or qr_data == "null" or len(str(qr_data).strip()) < 5:
-        return f'''
-        <div style="background-color: #ff4d4d; color: white; padding: 20px; font-family: Arial; text-align: center; border-radius: 8px; margin: 20px;">
-            <h1>⚠️ DATA QR RUSAK DARI NODE.JS!</h1>
-            <p>Flask menerima data QR yang tidak valid.</p>
-            <p><b>Isi data asli yang diterima:</b> <code style="background: black; padding: 5px; border-radius: 4px;">{qr_data}</code></p>
-            <p>Periksa kembali bagian <code>client.on('qr', ...)</code> di bot Node.js Anda!</p>
-        </div>
-        ''', 200
+    qr_image = QR_GLOBAL_DATA.get("qr")
 
-    # 3. JIKA DATA AMAN, GENERATE MENGGUNAKAN GOOGLE CHART API YANG BENAR
-    safe_qr_data = quote(str(qr_data))
-    qr_image_url = f"https://googleapis.com{safe_qr_data}&choe=UTF-8"
-    
-    return f'''
+    if not qr_image:
+        return """
+        <html>
+        <body style="background:#121212;color:white;
+        font-family:Arial;text-align:center;padding:50px">
+            <h2>QR belum tersedia</h2>
+            <p>Silakan tunggu bot menghasilkan QR Code.</p>
+        </body>
+        </html>
+        """, 404
+
+    return f"""
+    <!DOCTYPE html>
     <html>
     <head>
-        <title>Scan QR WhatsApp</title>
+        <title>MR.A BOT - Scan QR</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta http-equiv="refresh" content="15">
         <style>
             body {{
+                background: #121212;
+                color: white;
+                font-family: Arial;
                 display: flex;
                 flex-direction: column;
-                align-items: center;
                 justify-content: center;
-                height: 100vh;
-                font-family: Arial, sans-serif;
-                background-color: #121212;
-                color: white;
+                align-items: center;
+                min-height: 100vh;
                 margin: 0;
+                text-align: center;
             }}
             img {{
-                border: 15px solid white;
-                box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-                border-radius: 8px;
-                margin-top: 20px;
-                background-color: white;
                 width: 300px;
-                height: 300px;
+                max-width: 80vw;
+                height: auto;
+                background: white;
+                padding: 12px;
+                border-radius: 12px;
             }}
-            h1 {{
-                font-size: 24px;
-                letter-spacing: 1px;
-                margin-bottom: 5px;
-            }}
-            p {{
-                color: #b3b3b3;
-                font-size: 14px;
-            }}
+            p {{ color: #aaa; }}
         </style>
     </head>
     <body>
-        <h1>Scan QR WhatsApp</h1>
-        <p>Buka WhatsApp di HP Anda > Perangkat Tautan > Tautkan Perangkat</p>
-        <img src="{qr_image_url}" alt="WhatsApp QR Code" />
+        <h2>MR.A BOT - WhatsApp QR</h2>
+        <p>Silakan scan menggunakan WhatsApp.</p>
+        <img src="{qr_image}" alt="QR WhatsApp">
     </body>
     </html>
-    '''
+   '''
 
 # ------------------- ROOT -------------------
 @app.route("/", methods=["GET"])

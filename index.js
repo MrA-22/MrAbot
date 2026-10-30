@@ -1,4 +1,3 @@
-
 import { makeWASocket, DisconnectReason, fetchLatestBaileysVersion } from "@whiskeysockets/baileys";
 import pino from "pino";
 import chalk from "chalk";
@@ -858,32 +857,26 @@ async function startBot() {
 
     // ======================
     // ======================
-    sock.ev.on("creds.update", saveCreds);
+       sock.ev.on("creds.update", saveCreds);
+       sock.ev.on("connection.update", async (update) => {
+       const { connection, lastDisconnect, qr } = update;
 
-    sock.ev.on("connection.update", async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-
-        if (qr) {
+       if (qr) {
             qrGlobal = qr;
 
-            console.log("📱 QR didapat, kirim ke Flask...");
-
-            try {
-                await axios.post("http://127.0.0", { qr:qr });
-                console.log("✅ QR berhasil dikirim ke Flask");
-            } catch (err) {
-                console.log("❌ Gagal kirim QR:", err.message);
-            }
+            console.log("📱 QR didapat! SILAKAN SCAN LANGSUNG DI BAWAH INI:");
+            const safeQr = encodeURIComponent(qr);
+            console.log(`👉 LINK SCAN QR ANDA: https://googleapis.com{safeQr}&choe=UTF-8`);
 
             // 🚀 AUTOMATIC RESET JIKA QR TIDAK DI-SCAN DALAM 45 DETIK
             if (global.qrResetTimeout) clearTimeout(global.qrResetTimeout);
             global.qrResetTimeout = setTimeout(() => {
-                if (sock && !sock.user) {
+               if (sock && !sock.user) {
                     console.log("🔄 QR kedaluwarsa, merestart koneksi untuk meminta QR baru...");
                     sock.end(new Error("QR Expired Timeout"));
-                }
-            }, 45000); 
-        }
+                  }
+                }, 45000); 
+              }
 
         if (connection === "close") {
             // Bersihkan timeout jika koneksi ditutup

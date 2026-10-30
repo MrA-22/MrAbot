@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import json, os, threading, time
+from urllib.parse import quote  # 🛠️ Ditambahkan untuk memperbaiki enkripsi URL teks QR
 
 app = Flask(__name__)
 CORS(app) # ⚡ CORS aman
@@ -121,11 +122,15 @@ def get_qr():
     if not qr_data:
         return "<h1>❌ QR belum tersedia, silakan refresh halaman atau periksa bot Node.js Anda.</h1>", 404
         
-    # Perbaikan URL generator QR pada tag <img> di bawah ini:
+    # 🛠️ MEMPERBAIKI URL GENERATOR (Mengamankan string teks agar bisa dibaca menjadi gambar QR)
+    safe_qr_data = quote(qr_data)
+    qr_image_url = f"https://qrserver.com{safe_qr_data}"
+    
     return f'''
     <html>
     <head>
         <title>Scan QR WhatsApp</title>
+        <meta http-equiv="refresh" content="15"> <!-- Otomatis refresh halaman tiap 15 detik agar QR selalu segar -->
         <style>
             body {{
                 display: flex;
@@ -136,23 +141,30 @@ def get_qr():
                 font-family: Arial, sans-serif;
                 background-color: #121212;
                 color: white;
+                margin: 0;
             }}
             img {{
                 border: 15px solid white;
                 box-shadow: 0 4px 15px rgba(0,0,0,0.5);
                 border-radius: 8px;
                 margin-top: 20px;
+                background-color: white;
             }}
             h1 {{
                 font-size: 24px;
                 letter-spacing: 1px;
+                margin-bottom: 5px;
+            }}
+            p {{
+                color: #b3b3b3;
+                font-size: 14px;
             }}
         </style>
     </head>
     <body>
         <h1>Scan QR WhatsApp</h1>
         <p>Buka WhatsApp di HP Anda > Perangkat Tautan > Tautkan Perangkat</p>
-        <img src="https://qrserver.com{qr_data}" />
+        <img src="{qr_image_url}" alt="WhatsApp QR Code" />
     </body>
     </html>
     '''

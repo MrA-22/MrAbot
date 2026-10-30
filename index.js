@@ -862,21 +862,22 @@ async function startBot() {
        const { connection, lastDisconnect, qr } = update;
 
        if (qr) {
-            qrGlobal = qr;
+         qrGlobal = qr;
 
-            console.log("📱 QR didapat! SILAKAN SCAN LANGSUNG DI BAWAH INI:");
-            const safeQr = encodeURIComponent(qr);
-            console.log(`👉 LINK SCAN QR ANDA: https://googleapis.com{safeQr}&choe=UTF-8`);
+         console.log("📱 QR didapat!");
+         console.log("🌐 Buka endpoint /qr untuk melihat QR Code");
 
-            // 🚀 AUTOMATIC RESET JIKA QR TIDAK DI-SCAN DALAM 45 DETIK
-            if (global.qrResetTimeout) clearTimeout(global.qrResetTimeout);
-            global.qrResetTimeout = setTimeout(() => {
-               if (sock && !sock.user) {
-                    console.log("🔄 QR kedaluwarsa, merestart koneksi untuk meminta QR baru...");
-                    sock.end(new Error("QR Expired Timeout"));
-                  }
-                }, 45000); 
-              }
+         if (global.qrResetTimeout) {
+         clearTimeout(global.qrResetTimeout);
+      }
+
+         global.qrResetTimeout = setTimeout(() => {
+            if (sock && !sock.user) {
+              console.log("🔄 QR kedaluwarsa, meminta QR baru...");
+              sock.end(new Error("QR Expired Timeout"));
+            }
+         }, 45000);
+       }
 
         if (connection === "close") {
             // Bersihkan timeout jika koneksi ditutup

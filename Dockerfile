@@ -1,3 +1,4 @@
+
 FROM python:3.12-slim
 
 # =============================
@@ -35,7 +36,9 @@ WORKDIR /app
 # NODE DEPENDENCIES
 # =============================
 COPY package*.json ./
-RUN npm cache clean --force && npm install --omit=dev --legacy-peer-deps
+
+RUN npm cache clean --force \
+    && npm install --omit=dev --legacy-peer-deps
 
 # =============================
 # COPY PROJECT
@@ -54,16 +57,19 @@ RUN pip install --no-cache-dir --upgrade pip \
     flask \
     flask-cors
 
-# 🔥 WAJIB: install browser + deps lengkap
+# =============================
+# PLAYWRIGHT CHROMIUM
+# =============================
 RUN playwright install --with-deps chromium
 
 # =============================
-# FOLDER OUTPUT (PENTING)
+# FOLDER OUTPUT
 # =============================
-RUN mkdir -p /app/videos && chmod -R 777 /app/videos
+RUN mkdir -p /app/videos \
+    && chmod -R 777 /app/videos
 
 # =============================
-# ENV
+# ENVIRONMENT
 # =============================
 ENV PYTHONUNBUFFERED=1
 ENV NODE_ENV=production
@@ -71,7 +77,10 @@ ENV NODE_ENV=production
 # =============================
 # START SCRIPT
 # =============================
-COPY start.sh .
-RUN chmod +x start.sh
+RUN sed -i 's/\r$//' /app/start.sh \
+    && chmod +x /app/start.sh
 
-CMD ["./start.sh"]
+# =============================
+# START CONTAINER
+# =============================
+CMD ["/bin/sh", "/app/start.sh"]

@@ -1,272 +1,638 @@
+
 import sys
 import os
 import json
 import subprocess
 import requests
+import time
+from urllib.parse import urlparse, parse_qs
+
 from yt_dlp import YoutubeDL
 from playwright.sync_api import sync_playwright
-import time
 
-OUTPUT_DIR = "videos"
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+OUTPUT_DIR = os.path.abspath("videos")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# =============================
+REQUEST_TIMEOUT = 30
+
+# ============================================================
 # LOGGER
-# =============================
+# ============================================================
+
 class QuietLogger:
-    def debug(self, msg): pass
-    def warning(self, msg): pass
-    def error(self, msg): sys.stderr.write(f"[YTDLP ERROR] {msg}\n")
+    def debug(self, msg):
+        pass
 
-# =============================
+    def warning(self, msg):
+        pass
+
+    def error(self, msg):
+        sys.stderr.write(f"[YTDLP ERROR] {msg}\n")
+        sys.stderr.flush()
+
+
+def log(message):
+    sys.stderr.write(str(message) + "\n")
+    sys.stderr.flush()
+
+
+# PENTING:
+# download.js membaca ::FILE:: dan ::INFO:: dari STDOUT.
+# Jangan mengirim marker ini melalui STDERR.
+
+def emit(marker, data):
+    if isinstance(data, dict) or isinstance(data, list):
+        data = json.dumps(data, ensure_ascii=False)
+
+    print(f"::{marker}::{data}", flush=True)
+
+
+# ============================================================
 # DEBUG
-# =============================
-sys.stderr.write("DOWNLOADER START\n")
-sys.stderr.write(f"PATH: {os.getcwd()}\n")
-sys.stderr.flush()
+# ============================================================
 
-# =============================
-# EXPAND URL
-# =============================
-def expand_url(url):
+log("DOWNLOADER START")
+log(f"PATH: {os.getcwd()}")
+log(f"OUTPUT: {OUTPUT_DIR}")
+
+
+# ============================================================
+# HTTP SESSION
+# ============================================================
+
+session = requests.Session()
+
+session.headers.update({
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36"
+    )
+})
+
+
+# ============================================================
+# NORMALIZE YOUTUBE URL
+# ============================================================
+
+def normalize_youtube_url(url):
     try:
-        r = requests.get(url, allow_redirects=True, timeout=10)
-        return r.url
-    except:
+        parsed = urlparse(url)
+        host = parsed.netloc.lower()
+
+        video_id = None
+
+        if "youtu.be" in host:
+            video_id = parsed.path.strip("/").split("/")[0]
+
+        elif "youtube.com" in host or "youtube-nocookie.com" in host:
+
+            if parsed.path == "/watch":
+                video_id = parse_qs(parsed.query).get("v", [None])[0]
+
+            elif parsed.path.startswith(("/shorts/", "/embed/", "/live/")):
+                parts = parsed.path.strip("/").split("/")
+
+                if len(parts) > 1:
+                    video_id = parts[1]
+
+        if video_id:
+            return f"https://www.youtube.com/watch?v={video_id}"
+
+    except Exception as e:
+        log(f"[URL NORMALIZE ERROR] {e}")
+
+    return url
+
+
+# ============================================================
+# EXPAND URL
+# ============================================================
+
+def expand_url(url):
+
+    # Jangan expand URL YouTube.
+    # Cukup gunakan video ID.
+
+    normalized = normalize_youtube_url(url)
+
+    if normalized != url:
+        return normalized
+
+    if "youtube.com" in url or "youtu.be" in url:
+        return normalized
+
+    try:
+        response = session.get(
+            url,
+            allow_redirects=True,
+            timeout=REQUEST_TIMEOUT
+        )
+
+        return response.url
+
+    except Exception as e:
+        log(f"[URL EXPAND ERROR] {e}")
         return url
 
-# =============================
-# CONVERT WA MP4
-# =============================
+
+# ============================================================
+# CONVERT WHATSAPP MP4
+# ============================================================
+
 def convert_to_whatsapp_mp4(path):
+
     output = os.path.splitext(path)[0] + "_wa.mp4"
 
     cmd = [
-        "ffmpeg", "-y", "-i", path,
+        "ffmpeg",
+        "-y",
+        "-i", path,
+
         "-c:v", "libx264",
         "-profile:v", "baseline",
         "-level", "3.0",
         "-pix_fmt", "yuv420p",
+
         "-vf", "scale=480:-2",
         "-r", "30",
+
         "-c:a", "aac",
         "-b:a", "128k",
+
         "-movflags", "+faststart",
+
         output
     ]
 
-    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    result = subprocess.run(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True
+    )
 
-    if not os.path.exists(output):
-        raise Exception("FFMPEG gagal convert")
+    if result.returncode != 0 or not os.path.exists(output):
+        if os.path.exists(output):
+            os.remove(output)
+
+        raise Exception(
+            "FFMPEG gagal convert: " + result.stderr[-1000:]
+        )
 
     if os.path.exists(path):
         os.remove(path)
 
     return output
 
-# =============================
+
+# ============================================================
 # TIKTOK SLIDESHOW
-# =============================
+# ============================================================
+
 def tiktok_slideshow(url):
+
     images = []
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox"]
+        )
+
         context = browser.new_context(
             user_agent="Mozilla/5.0 (iPhone)",
-            viewport={"width": 390, "height": 844},
+            viewport={
+                "width": 390,
+                "height": 844
+            },
             is_mobile=True
         )
 
         page = context.new_page()
-        page.goto(url, timeout=30000)
-        time.sleep(3)
 
-        imgs = page.query_selector_all("img")
-        for img in imgs:
-            src = img.get_attribute("src")
-            if src and "tiktokcdn" in src:
-                images.append(src)
+        try:
+            page.goto(
+                url,
+                timeout=30000,
+                wait_until="domcontentloaded"
+            )
 
-        browser.close()
+            time.sleep(3)
+
+            imgs = page.query_selector_all("img")
+
+            for img in imgs:
+
+                src = img.get_attribute("src")
+
+                if src and "tiktokcdn" in src:
+                    images.append(src)
+
+        finally:
+            browser.close()
 
     images = list(dict.fromkeys(images))[:10]
 
     files = []
+
     for i, img in enumerate(images):
-        fn = f"{OUTPUT_DIR}/tiktok_{i}.jpg"
-        r = requests.get(img).content
 
-        with open(fn, "wb") as f:
-            f.write(r)
+        filename = os.path.join(
+            OUTPUT_DIR,
+            f"tiktok_{i}.jpg"
+        )
 
-        files.append(os.path.abspath(fn))
+        response = session.get(
+            img,
+            timeout=REQUEST_TIMEOUT
+        )
+
+        response.raise_for_status()
+
+        with open(filename, "wb") as f:
+            f.write(response.content)
+
+        files.append(os.path.abspath(filename))
 
     if not files:
         raise Exception("Slideshow gagal")
 
-    sys.stderr.write("::FILES::" + json.dumps(files) + "\n")
-    sys.stderr.write("::INFO::" + json.dumps({
+    emit("FILES", files)
+
+    emit("INFO", {
         "title": "TikTok Slideshow",
         "uploader": "TikTok"
-    }) + "\n")
-    sys.stderr.flush()
+    })
 
     return True
 
-# =============================
+
+# ============================================================
 # INSTAGRAM FALLBACK
-# =============================
+# ============================================================
+
 def instagram_fallback(url):
+
     try:
-        headers = {"User-Agent": "Mozilla/5.0"}
+
+        headers = {
+            "User-Agent": "Mozilla/5.0"
+        }
+
         api = url.split("?")[0] + "?__a=1&__d=dis"
 
-        r = requests.get(api, headers=headers, timeout=15)
-        data = r.json()
+        response = session.get(
+            api,
+            headers=headers,
+            timeout=15
+        )
 
-        video_url = data["items"][0]["video_versions"][0]["url"]
+        response.raise_for_status()
 
-        fn = os.path.join(OUTPUT_DIR, "instagram.mp4")
-        vid = requests.get(video_url).content
+        data = response.json()
 
-        with open(fn, "wb") as f:
-            f.write(vid)
+        video_url = (
+            data["items"][0]["video_versions"][0]["url"]
+        )
 
-        sys.stderr.write("::FILE::" + os.path.abspath(fn) + "\n")
-        sys.stderr.write("::INFO::" + json.dumps({
+        filename = os.path.join(
+            OUTPUT_DIR,
+            "instagram.mp4"
+        )
+
+        video = session.get(
+            video_url,
+            timeout=REQUEST_TIMEOUT
+        )
+
+        video.raise_for_status()
+
+        with open(filename, "wb") as f:
+            f.write(video.content)
+
+        emit("FILE", os.path.abspath(filename))
+
+        emit("INFO", {
             "title": "Instagram Video",
             "uploader": "Instagram"
-        }) + "\n")
-        sys.stderr.flush()
+        })
 
         return True
 
     except Exception as e:
-        sys.stderr.write(f"[IG FALLBACK ERROR] {e}\n")
+
+        log(f"[IG FALLBACK ERROR] {e}")
+
         return False
 
-# =============================
-# YTDLP DOWNLOAD (RETRY + COOKIE)
-# =============================
+
+# ============================================================
+# YTDLP DOWNLOAD
+# ============================================================
+
 def download_video(url):
+
+    is_youtube = (
+        "youtube.com" in url or
+        "youtu.be" in url
+    )
+
+    is_tiktok = "tiktok.com" in url
+
     opts = {
-        "format": "mp4",
+
+        "format": "best[ext=mp4]/best",
+
         "merge_output_format": "mp4",
-        "outtmpl": OUTPUT_DIR + "/%(id)s.%(ext)s",
+
+        "outtmpl": os.path.join(
+            OUTPUT_DIR,
+            "%(id)s.%(ext)s"
+        ),
+
         "quiet": True,
+        "no_warnings": True,
         "noplaylist": True,
+
         "logger": QuietLogger(),
 
-        "cookiefile": "/app/tiktok_cookies.txt",
+        "socket_timeout": 30,
 
-        "http_headers": {
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)",
+        "retries": 1,
+        "fragment_retries": 1,
+
+        "continuedl": True,
+
+        "overwrites": True
+    }
+
+    # HEADER KHUSUS YOUTUBE
+
+    if is_youtube:
+
+        opts["http_headers"] = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 Chrome/131.0.0.0 "
+                "Safari/537.36"
+            ),
+            "Referer": "https://www.youtube.com/"
+        }
+
+    # HEADER KHUSUS TIKTOK
+
+    elif is_tiktok:
+
+        opts["http_headers"] = {
+            "User-Agent": "Mozilla/5.0 (iPhone)",
             "Referer": "https://www.tiktok.com/"
-        },
+        }
 
-        "extractor_args": {
+        opts["extractor_args"] = {
             "tiktok": {
                 "api_hostname": "api16-normal-c-useast1a.tiktokv.com"
             }
         }
-    }
 
-    for i in range(2):  # 🔥 retry 2x
+        # Cookie TikTok hanya digunakan untuk TikTok.
+        cookie_path = "/app/tiktok_cookies.txt"
+
+        if os.path.isfile(cookie_path):
+            opts["cookiefile"] = cookie_path
+
+    # RETRY DENGAN BACKOFF
+
+    for attempt in range(2):
+
         try:
+
+            log(f"[YTDLP] Download attempt {attempt + 1}")
+
             with YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=True)
 
-                if "requested_downloads" in info:
-                    file = info["requested_downloads"][0]["filepath"]
-                elif "_filename" in info:
-                    file = info["_filename"]
-                else:
-                    raise Exception("File tidak ditemukan")
+                info = ydl.extract_info(
+                    url,
+                    download=True
+                )
 
-            if not os.path.exists(file):
-                raise Exception("File tidak ada")
+                if not info:
+                    raise Exception("Informasi video kosong")
 
-            final = convert_to_whatsapp_mp4(file)
+                # Cari lokasi file hasil download.
 
-            sys.stderr.write("::FILE::" + os.path.abspath(final) + "\n")
-            sys.stderr.write("::INFO::" + json.dumps({
+                candidates = []
+
+                if info.get("requested_downloads"):
+
+                    for item in info["requested_downloads"]:
+
+                        filepath = item.get("filepath")
+
+                        if filepath:
+                            candidates.append(filepath)
+
+                if info.get("filepath"):
+                    candidates.append(info["filepath"])
+
+                candidates.append(
+                    ydl.prepare_filename(info)
+                )
+
+                file_path = next(
+                    (
+                        os.path.abspath(f)
+                        for f in candidates
+                        if f and os.path.isfile(f)
+                    ),
+                    None
+                )
+
+            if not file_path:
+                raise Exception("File hasil download tidak ditemukan")
+
+            log(f"[DOWNLOADED] {file_path}")
+
+            # Convert video agar kompatibel dengan WhatsApp.
+
+            extension = os.path.splitext(
+                file_path
+            )[1].lower()
+
+            if extension in (
+                ".mp4",
+                ".mkv",
+                ".webm",
+                ".mov",
+                ".avi"
+            ):
+
+                final_file = convert_to_whatsapp_mp4(
+                    file_path
+                )
+
+            else:
+                final_file = file_path
+
+            # Output untuk Node.js.
+
+            emit(
+                "FILE",
+                os.path.abspath(final_file)
+            )
+
+            emit("INFO", {
                 "title": info.get("title"),
                 "uploader": info.get("uploader"),
                 "duration": info.get("duration"),
-                "thumbnail": info.get("thumbnail")
-            }) + "\n")
-            sys.stderr.flush()
+                "thumbnail": info.get("thumbnail"),
+                "view_count": info.get("view_count")
+            })
+
+            log("[DOWNLOAD SUCCESS]")
 
             return True
 
         except Exception as e:
-            sys.stderr.write(f"[YTDLP RETRY {i}] {e}\n")
-            time.sleep(2)
+
+            error_message = str(e)
+
+            log(
+                f"[YTDLP RETRY {attempt}] {error_message}"
+            )
+
+            # HTTP 429: jangan melakukan retry agresif.
+            if "429" in error_message:
+
+                if attempt == 0:
+                    log("[RATE LIMIT] Waiting 30 seconds")
+                    time.sleep(30)
+                    continue
+
+                log(
+                    "[RATE LIMIT] YouTube masih membatasi akses."
+                )
+
+                return False
+
+            if attempt == 0:
+                time.sleep(5)
 
     return False
 
-# =============================
+
+# ============================================================
 # TIKTOK API FALLBACK
-# =============================
+# ============================================================
+
 def tiktok_api_fallback(url):
+
     try:
-        api = f"https://api.tiklydown.eu.org/api/download?url={url}"
-        res = requests.get(api, timeout=15).json()
 
-        if res.get("video"):
-            fn = os.path.join(OUTPUT_DIR, "tiktok_api.mp4")
-            vid = requests.get(res["video"]).content
+        from urllib.parse import quote
 
-            with open(fn, "wb") as f:
-                f.write(vid)
+        api = (
+            "https://api.tiklydown.eu.org/api/download?url="
+            + quote(url, safe="")
+        )
 
-            sys.stderr.write("::FILE::" + os.path.abspath(fn) + "\n")
-            sys.stderr.write("::INFO::" + json.dumps({
+        response = session.get(
+            api,
+            timeout=15
+        )
+
+        response.raise_for_status()
+
+        data = response.json()
+
+        if data.get("video"):
+
+            filename = os.path.join(
+                OUTPUT_DIR,
+                "tiktok_api.mp4"
+            )
+
+            video = session.get(
+                data["video"],
+                timeout=REQUEST_TIMEOUT
+            )
+
+            video.raise_for_status()
+
+            with open(filename, "wb") as f:
+                f.write(video.content)
+
+            emit("FILE", os.path.abspath(filename))
+
+            emit("INFO", {
                 "title": "TikTok Video",
                 "uploader": "API"
-            }) + "\n")
-            sys.stderr.flush()
+            })
 
             return True
 
-    except:
-        pass
+    except Exception as e:
+
+        log(f"[TIKTOK API ERROR] {e}")
 
     return False
 
-# =============================
+
+# ============================================================
 # MAIN
-# =============================
+# ============================================================
+
 if __name__ == "__main__":
+
     if len(sys.argv) < 2:
+        log("[ERROR] URL tidak ditemukan")
         sys.exit(1)
 
-    url = expand_url(sys.argv[1])
+    original_url = sys.argv[1].strip()
 
-    # slideshow
-    if "tiktok.com" in url and "/photo/" in url:
+    url = expand_url(original_url)
+
+    log(f"[URL] {url}")
+
+    # TIKTOK SLIDESHOW
+
+    if (
+        "tiktok.com" in url and
+        "/photo/" in url
+    ):
+
         try:
-            tiktok_slideshow(url)
-            sys.exit(0)
-        except:
-            pass
 
-    # utama
+            if tiktok_slideshow(url):
+                sys.exit(0)
+
+        except Exception as e:
+
+            log(f"[SLIDESHOW ERROR] {e}")
+
+    # DOWNLOAD UTAMA
+
     if download_video(url):
         sys.exit(0)
 
-    # fallback TikTok
+    # TIKTOK FALLBACK
+
     if "tiktok.com" in url:
+
         if tiktok_api_fallback(url):
             sys.exit(0)
 
-    # fallback IG
+    # INSTAGRAM FALLBACK
+
     if "instagram.com" in url:
+
         if instagram_fallback(url):
             sys.exit(0)
 
-    sys.stderr.write("[DOWNLOAD FAILED]\n")
-    sys.stderr.flush()
+    log("[DOWNLOAD FAILED]")
+
     sys.exit(1)

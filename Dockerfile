@@ -49,13 +49,15 @@ COPY . .
 # PYTHON DEPENDENCIES
 # =============================
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir \
-    yt-dlp \
+    && pip install --no-cache-dir --upgrade \
+    "yt-dlp[default]" \
     requests \
     beautifulsoup4 \
     playwright \
     flask \
-    flask-cors
+    flask-cors \
+    qrcode \
+    pillow
 
 # =============================
 # PLAYWRIGHT CHROMIUM

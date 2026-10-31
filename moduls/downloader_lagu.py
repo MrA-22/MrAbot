@@ -1,134 +1,116 @@
-
 import sys
 import os
+import re
 import subprocess
 import uuid
 from yt_dlp import YoutubeDL
 
 if len(sys.argv) < 2:
-    print("::ERROR::Query kosong", flush=True)
-    sys.exit(1)
+print("::ERROR::Query kosong", flush=True)
+sys.exit(1)
 
 query = " ".join(sys.argv[1:]).strip()
 
 OUTPUT_DIR = "/tmp/audios"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# Lokasi cookie YouTube
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-COOKIE_FILE = os.path.join(BASE_DIR, "..", "ytcookies.txt")
-COOKIE_FILE = os.path.abspath(COOKIE_FILE)
-
 video_url = None
 title = query
 video = {}
-filepath = None
-mp3_path = None
+
+def clean_filename(name):
+name = re.sub(r'[\/:*?"<>|]', "", name)
+return name[:100].strip() or "audio"
 
 try:
-    if not os.path.isfile(COOKIE_FILE):
-        raise Exception("File ytcookies.txt tidak ditemukan")
+# SEARCH VIDEO
+search_opts = {
+"quiet": True,
+"no_warnings": True,
+"skip_download": True,
+"noplaylist": True,
+"socket_timeout": 30,
+}
 
-    if os.path.getsize(COOKIE_FILE) == 0:
-        raise Exception("File ytcookies.txt kosong")
+with YoutubeDL(search_opts) as ydl:  
+    result = ydl.extract_info(  
+        f"ytsearch1:{query}",  
+        download=False  
+    )  
 
-    cookie_options = {
-        "cookiefile": COOKIE_FILE,
-    }
+    entries = result.get("entries") or []  
 
-    # SEARCH VIDEO
-    search_opts = {
-        **cookie_options,
-        "quiet": True,
-        "no_warnings": True,
-        "skip_download": True,
-        "noplaylist": True,
-        "socket_timeout": 30,
-    }
+    if not entries:  
+        raise Exception("Video tidak ditemukan")  
 
-    with YoutubeDL(search_opts) as ydl:
-        result = ydl.extract_info(
-            f"ytsearch1:{query}",
-            download=False
-        )
+    video = entries[0]  
 
-        entries = result.get("entries") or []
+    video_url = video.get("webpage_url")  
+    title = video.get("title", query)  
 
-        if not entries:
-            raise Exception("Video tidak ditemukan")
+    if not video_url:  
+        raise Exception("URL video tidak ditemukan")  
 
-        video = entries[0]
-        video_url = video.get("webpage_url")
-        title = video.get("title", query)
+# DOWNLOAD AUDIO  
+filename = uuid.uuid4().hex  
 
-        if not video_url:
-            raise Exception("URL video tidak ditemukan")
+download_opts = {  
+    "quiet": True,  
+    "no_warnings": True,  
+    "format": "bestaudio/best",  
+    "outtmpl": os.path.join(  
+        OUTPUT_DIR,  
+        filename + ".%(ext)s"  
+    ),  
+    "noplaylist": True,  
+    "socket_timeout": 30,  
+    "retries": 2,  
+    "overwrites": True,  
+}  
 
-    # DOWNLOAD AUDIO
-    filename = uuid.uuid4().hex
+with YoutubeDL(download_opts) as ydl:  
+    info = ydl.extract_info(video_url, download=True)  
+    filepath = ydl.prepare_filename(info)  
 
-    download_opts = {
-        **cookie_options,
-        "quiet": True,
-        "no_warnings": True,
-        "format": "bestaudio/best",
-        "outtmpl": os.path.join(
-            OUTPUT_DIR,
-            filename + ".%(ext)s"
-        ),
-        "noplaylist": True,
-        "socket_timeout": 30,
-        "retries": 3,
-        "overwrites": True,
-    }
+# CONVERT MP3  
+mp3_path = os.path.join(  
+    OUTPUT_DIR,  
+    filename + ".mp3"  
+)  
 
-    with YoutubeDL(download_opts) as ydl:
-        info = ydl.extract_info(video_url, download=True)
-        filepath = ydl.prepare_filename(info)
+result = subprocess.run(  
+    [  
+        "ffmpeg",  
+        "-y",  
+        "-i", filepath,  
+        "-vn",  
+        "-codec:a", "libmp3lame",  
+        "-b:a", "128k",  
+        mp3_path  
+    ],  
+    capture_output=True,  
+    text=True,  
+    timeout=180  
+)  
 
-    if not os.path.exists(filepath):
-        raise Exception("File audio hasil download tidak ditemukan")
+if result.returncode != 0:  
+    raise Exception("FFmpeg: " + result.stderr[-1000:])  
 
-    # CONVERT MP3
-    mp3_path = os.path.join(
-        OUTPUT_DIR,
-        filename + ".mp3"
-    )
+if not os.path.exists(mp3_path):  
+    raise Exception("File MP3 tidak ditemukan")  
 
-    result = subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-i", filepath,
-            "-vn",
-            "-codec:a", "libmp3lame",
-            "-b:a", "128k",
-            mp3_path
-        ],
-        capture_output=True,
-        text=True,
-        timeout=180
-    )
+if os.path.exists(filepath):  
+    os.remove(filepath)  
 
-    if result.returncode != 0:
-        raise Exception(
-            "FFmpeg: " + result.stderr[-1000:]
-        )
-
-    if not os.path.exists(mp3_path):
-        raise Exception("File MP3 tidak ditemukan")
-
-    os.remove(filepath)
-
-    print(f"::SUCCESS::{mp3_path}", flush=True)
+print(f"::SUCCESS::{mp3_path}", flush=True)
 
 except Exception as e:
-    print(f"::ERROR::{str(e)}", flush=True)
+print(f"::ERROR::{str(e)}", flush=True)
 
 finally:
-    if video_url:
-        print(f"::TITLE::{title}", flush=True)
-        print(f"::URL::{video_url}", flush=True)
-        print(f"::THUMB::{video.get('thumbnail', '')}", flush=True)
-        print(f"::UPLOADER::{video.get('uploader', '-')}", flush=True)
-        print(f"::DURATION::{video.get('duration', 0)}", flush=True)
+if video_url:
+print(f"::TITLE::{title}", flush=True)
+print(f"::URL::{video_url}", flush=True)
+print(f"::THUMB::{video.get('thumbnail', '')}", flush=True)
+print(f"::UPLOADER::{video.get('uploader', '-')}", flush=True)
+print(f"::DURATION::{video.get('duration', 0)}", flush=True)

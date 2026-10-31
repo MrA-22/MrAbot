@@ -15,10 +15,6 @@ import qrcode from "qrcode";
 import axios from "axios"; 
 import { connectMongo } from "./mongo.js"
 import { useMongoAuthState } from "./auth.js"
-if (fs.existsSync('./bot/session')) {
-    fs.rmSync('./bot/session', { recursive: true, force: true });
-    console.log('🗑️ Folder sesi rusak berhasil dihapus otomatis oleh sistem!');
-}
 
 console.log = function (...args) {
 
@@ -789,6 +785,19 @@ setInterval(async () => {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ======================
+// HEALTH CHECK RENDER
+// ======================
+app.get("/health", (req, res) => {
+    res.status(200).json({
+        status: "OK",
+        service: "MR.A BOT",
+        api: "ONLINE",
+        uptime: process.uptime(),
+        whatsapp: sock?.user ? "CONNECTED" : "DISCONNECTED"
+    });
+});
+
 // ROOT TEST
 app.get("/", (req, res) => {
     res.send("✅ MR.A BOT API RUNNING 🚀");
@@ -1180,25 +1189,14 @@ async function startBot() {
     })
 }
 
-export async function stopBot() {
-    if (!BOT_ACTIVE) {
-        console.log("⚠️ Bot sudah berhenti");
-        return;
-    }
-
+function updateStatusFile(status) {
     try {
-        if (sock) {
-            await sock.logout();
-            sock = null;
-        }
-        BOT_ACTIVE = false;
-        updateStatusFile('OFFLINE');
-        stopScheduler();
-        console.log("🛑 Bot stopped");
+        fs.writeFileSync('./bot_status.txt', status, 'utf8');
     } catch (err) {
-        console.error("❌ Gagal stop bot:", err.message);
+        console.error("❌ Gagal memperbarui status:", err.message);
     }
 }
+
 setInterval(() => {
 
     if (!fs.existsSync("command_queue.txt")) return

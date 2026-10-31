@@ -1,12 +1,11 @@
-
 import sys
 import os
 import json
 import subprocess
 import requests
 import time
-from urllib.parse import urlparse, parse_qs
 
+from urllib.parse import urlparse, parse_qs, quote
 from yt_dlp import YoutubeDL
 from playwright.sync_api import sync_playwright
 
@@ -14,16 +13,31 @@ from playwright.sync_api import sync_playwright
 # CONFIGURATION
 # ============================================================
 
-OUTPUT_DIR = os.path.abspath("videos")
+BASE_DIR = os.getcwd()
+
+OUTPUT_DIR = os.path.join(BASE_DIR, "videos")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 REQUEST_TIMEOUT = 30
+
+# COOKIE YOUTUBE
+YOUTUBE_COOKIE_PATH = os.path.join(
+    BASE_DIR,
+    "cookiesyt.txt"
+)
+
+# COOKIE TIKTOK
+TIKTOK_COOKIE_PATH = os.path.join(
+    BASE_DIR,
+    "tiktok_cookies.txt"
+)
 
 # ============================================================
 # LOGGER
 # ============================================================
 
 class QuietLogger:
+
     def debug(self, msg):
         pass
 
@@ -36,16 +50,14 @@ class QuietLogger:
 
 
 def log(message):
+
     sys.stderr.write(str(message) + "\n")
     sys.stderr.flush()
 
 
-# PENTING:
-# download.js membaca ::FILE:: dan ::INFO:: dari STDOUT.
-# Jangan mengirim marker ini melalui STDERR.
-
 def emit(marker, data):
-    if isinstance(data, dict) or isinstance(data, list):
+
+    if isinstance(data, (dict, list)):
         data = json.dumps(data, ensure_ascii=False)
 
     print(f"::{marker}::{data}", flush=True)
@@ -56,7 +68,7 @@ def emit(marker, data):
 # ============================================================
 
 log("DOWNLOADER START")
-log(f"PATH: {os.getcwd()}")
+log(f"PATH: {BASE_DIR}")
 log(f"OUTPUT: {OUTPUT_DIR}")
 
 
@@ -79,30 +91,46 @@ session.headers.update({
 # ============================================================
 
 def normalize_youtube_url(url):
+
     try:
+
         parsed = urlparse(url)
         host = parsed.netloc.lower()
 
         video_id = None
 
         if "youtu.be" in host:
+
             video_id = parsed.path.strip("/").split("/")[0]
 
-        elif "youtube.com" in host or "youtube-nocookie.com" in host:
+        elif (
+            "youtube.com" in host or
+            "youtube-nocookie.com" in host
+        ):
 
             if parsed.path == "/watch":
-                video_id = parse_qs(parsed.query).get("v", [None])[0]
 
-            elif parsed.path.startswith(("/shorts/", "/embed/", "/live/")):
+                video_id = parse_qs(
+                    parsed.query
+                ).get("v", [None])[0]
+
+            elif parsed.path.startswith(
+                ("/shorts/", "/embed/", "/live/")
+            ):
+
                 parts = parsed.path.strip("/").split("/")
 
                 if len(parts) > 1:
                     video_id = parts[1]
 
         if video_id:
-            return f"https://www.youtube.com/watch?v={video_id}"
+
+            return (
+                f"https://www.youtube.com/watch?v={video_id}"
+            )
 
     except Exception as e:
+
         log(f"[URL NORMALIZE ERROR] {e}")
 
     return url
@@ -114,18 +142,19 @@ def normalize_youtube_url(url):
 
 def expand_url(url):
 
-    # Jangan expand URL YouTube.
-    # Cukup gunakan video ID.
-
     normalized = normalize_youtube_url(url)
 
     if normalized != url:
         return normalized
 
-    if "youtube.com" in url or "youtu.be" in url:
+    if (
+        "youtube.com" in url or
+        "youtu.be" in url
+    ):
         return normalized
 
     try:
+
         response = session.get(
             url,
             allow_redirects=True,
@@ -135,7 +164,9 @@ def expand_url(url):
         return response.url
 
     except Exception as e:
+
         log(f"[URL EXPAND ERROR] {e}")
+
         return url
 
 
@@ -175,12 +206,17 @@ def convert_to_whatsapp_mp4(path):
         text=True
     )
 
-    if result.returncode != 0 or not os.path.exists(output):
+    if (
+        result.returncode != 0 or
+        not os.path.exists(output)
+    ):
+
         if os.path.exists(output):
             os.remove(output)
 
         raise Exception(
-            "FFMPEG gagal convert: " + result.stderr[-1000:]
+            "FFMPEG gagal convert: " +
+            result.stderr[-1000:]
         )
 
     if os.path.exists(path):
@@ -216,6 +252,7 @@ def tiktok_slideshow(url):
         page = context.new_page()
 
         try:
+
             page.goto(
                 url,
                 timeout=30000,
@@ -234,6 +271,7 @@ def tiktok_slideshow(url):
                     images.append(src)
 
         finally:
+
             browser.close()
 
     images = list(dict.fromkeys(images))[:10]
@@ -284,7 +322,10 @@ def instagram_fallback(url):
             "User-Agent": "Mozilla/5.0"
         }
 
-        api = url.split("?")[0] + "?__a=1&__d=dis"
+        api = (
+            url.split("?")[0] +
+            "?__a=1&__d=dis"
+        )
 
         response = session.get(
             api,
@@ -297,7 +338,8 @@ def instagram_fallback(url):
         data = response.json()
 
         video_url = (
-            data["items"][0]["video_versions"][0]["url"]
+            data["items"][0]
+            ["video_versions"][0]["url"]
         )
 
         filename = os.path.join(
@@ -367,51 +409,78 @@ def download_video(url):
         "fragment_retries": 1,
 
         "continuedl": True,
-
         "overwrites": True
     }
 
-    # HEADER KHUSUS YOUTUBE
+    # ========================================================
+    # YOUTUBE CONFIGURATION + COOKIE
+    # ========================================================
 
     if is_youtube:
 
         opts["http_headers"] = {
+
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 Chrome/131.0.0.0 "
                 "Safari/537.36"
             ),
+
             "Referer": "https://www.youtube.com/"
         }
 
-    # HEADER KHUSUS TIKTOK
+        if os.path.isfile(YOUTUBE_COOKIE_PATH):
+
+            opts["cookiefile"] = YOUTUBE_COOKIE_PATH
+
+            log("[YOUTUBE] Cookie ditemukan")
+
+        else:
+
+            log(
+                "[YOUTUBE] Cookie tidak ditemukan: " +
+                YOUTUBE_COOKIE_PATH
+            )
+
+    # ========================================================
+    # TIKTOK CONFIGURATION + COOKIE
+    # ========================================================
 
     elif is_tiktok:
 
         opts["http_headers"] = {
+
             "User-Agent": "Mozilla/5.0 (iPhone)",
+
             "Referer": "https://www.tiktok.com/"
         }
 
         opts["extractor_args"] = {
+
             "tiktok": {
-                "api_hostname": "api16-normal-c-useast1a.tiktokv.com"
+                "api_hostname": (
+                    "api16-normal-c-useast1a.tiktokv.com"
+                )
             }
         }
 
-        # Cookie TikTok hanya digunakan untuk TikTok.
-        cookie_path = "/app/tiktok_cookies.txt"
+        if os.path.isfile(TIKTOK_COOKIE_PATH):
 
-        if os.path.isfile(cookie_path):
-            opts["cookiefile"] = cookie_path
+            opts["cookiefile"] = TIKTOK_COOKIE_PATH
 
-    # RETRY DENGAN BACKOFF
+            log("[TIKTOK] Cookie ditemukan")
+
+    # ========================================================
+    # RETRY
+    # ========================================================
 
     for attempt in range(2):
 
         try:
 
-            log(f"[YTDLP] Download attempt {attempt + 1}")
+            log(
+                f"[YTDLP] Download attempt {attempt + 1}"
+            )
 
             with YoutubeDL(opts) as ydl:
 
@@ -421,9 +490,10 @@ def download_video(url):
                 )
 
                 if not info:
-                    raise Exception("Informasi video kosong")
 
-                # Cari lokasi file hasil download.
+                    raise Exception(
+                        "Informasi video kosong"
+                    )
 
                 candidates = []
 
@@ -453,11 +523,12 @@ def download_video(url):
                 )
 
             if not file_path:
-                raise Exception("File hasil download tidak ditemukan")
+
+                raise Exception(
+                    "File hasil download tidak ditemukan"
+                )
 
             log(f"[DOWNLOADED] {file_path}")
-
-            # Convert video agar kompatibel dengan WhatsApp.
 
             extension = os.path.splitext(
                 file_path
@@ -476,9 +547,8 @@ def download_video(url):
                 )
 
             else:
-                final_file = file_path
 
-            # Output untuk Node.js.
+                final_file = file_path
 
             emit(
                 "FILE",
@@ -486,10 +556,15 @@ def download_video(url):
             )
 
             emit("INFO", {
+
                 "title": info.get("title"),
+
                 "uploader": info.get("uploader"),
+
                 "duration": info.get("duration"),
+
                 "thumbnail": info.get("thumbnail"),
+
                 "view_count": info.get("view_count")
             })
 
@@ -505,21 +580,27 @@ def download_video(url):
                 f"[YTDLP RETRY {attempt}] {error_message}"
             )
 
-            # HTTP 429: jangan melakukan retry agresif.
             if "429" in error_message:
 
-                if attempt == 0:
-                    log("[RATE LIMIT] Waiting 30 seconds")
-                    time.sleep(30)
-                    continue
+                log(
+                    "[RATE LIMIT] YouTube membatasi permintaan."
+                )
+
+                return False
+
+            if (
+                "Sign in to confirm" in error_message or
+                "confirm you're not a bot" in error_message
+            ):
 
                 log(
-                    "[RATE LIMIT] YouTube masih membatasi akses."
+                    "[YOUTUBE AUTH] YouTube meminta verifikasi."
                 )
 
                 return False
 
             if attempt == 0:
+
                 time.sleep(5)
 
     return False
@@ -532,8 +613,6 @@ def download_video(url):
 def tiktok_api_fallback(url):
 
     try:
-
-        from urllib.parse import quote
 
         api = (
             "https://api.tiklydown.eu.org/api/download?url="
@@ -589,7 +668,9 @@ def tiktok_api_fallback(url):
 if __name__ == "__main__":
 
     if len(sys.argv) < 2:
+
         log("[ERROR] URL tidak ditemukan")
+
         sys.exit(1)
 
     original_url = sys.argv[1].strip()

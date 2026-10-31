@@ -399,7 +399,11 @@ export async function play(sock, msg, from, sender, cmd, args) {
         }
 
     } catch (e) {
-        console.log("❌ yt-dlp gagal");
+    console.error("❌ YT-DLP GAGAL");
+    console.error("MESSAGE:", e.message);
+    console.error("STDOUT:", e.stdout);
+    console.error("STDERR:", e.stderr);
+    console.error("CODE:", e.code);
     }
 
     // FALLBACK AUDIO

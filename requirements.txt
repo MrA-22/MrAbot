@@ -1,3 +1,4 @@
+
 yt-dlp
 requests
 flask
@@ -5,3 +6,4 @@ beautifulsoup4
 flask-cors
 qrcode
 pillow
+playwright

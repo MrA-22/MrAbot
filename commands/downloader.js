@@ -231,9 +231,11 @@ export async function downloaderCommand({ sock, msg, from, text }) {
 /* ============================================================
    ===============         PLAY MUSIC        ==================
    ============================================================*/
+
 export async function play(sock, msg, from, sender, cmd, args) {
     if (!Array.isArray(args)) args = [];
-    const query = args.join(" ");
+
+    const query = args.join(" ").trim();
 
     if (!query) {
         return sock.sendMessage(from, {
@@ -241,101 +243,159 @@ export async function play(sock, msg, from, sender, cmd, args) {
         }, { quoted: msg });
     }
 
-    await sock.sendMessage(from, { react: { text: "⏳", key: msg.key } });
+    await sock.sendMessage(from, {
+        react: { text: "⏳", key: msg.key }
+    });
 
     let success = false;
-    let videoUrl = null;
+    let mp3Path = null;
 
     try {
-        const { stdout } = await execPromise(
-            `python3 ./moduls/downloader_lagu.py "${query}"`
+        // LOKASI PYTHON
+        const scriptPath = path.resolve(
+            process.cwd(),
+            "moduls",
+            "downloader_lagu.py"
         );
 
-        console.log(stdout);
+        if (!fs.existsSync(scriptPath)) {
+            throw new Error(
+                `File downloader_lagu.py tidak ditemukan: ${scriptPath}`
+            );
+        }
 
-        const mp3Match = stdout.match(/::SUCCESS::(.+)/);
-        const titleMatch = stdout.match(/::TITLE::(.+)/);
-        const urlMatch = stdout.match(/::URL::(.+)/);
-        const thumbMatch = stdout.match(/::THUMB::(.+)/);
-        const uploaderMatch = stdout.match(/::UPLOADER::(.+)/);
-        const durationMatch = stdout.match(/::DURATION::(.+)/);
+        // DETEKSI PYTHON
+        const pythonCmd = process.platform === "win32"
+            ? "py"
+            : "python3";
 
-        const title = titleMatch ? titleMatch[1].trim() : query;
-        videoUrl = urlMatch ? urlMatch[1].trim() : null;
-        const thumbnail = thumbMatch ? thumbMatch[1].trim() : null;
-        const uploader = uploaderMatch ? uploaderMatch[1].trim() : "-";
-        const duration = durationMatch ? parseInt(durationMatch[1]) : 0;
+        // JALANKAN DOWNLOADER
+        let stdout = "";
 
-        // 🎨 CAPTION
+        try {
+            const result = await execFilePromise(
+                pythonCmd,
+                [scriptPath, query],
+                {
+                    timeout: 240000,
+                    maxBuffer: 5 * 1024 * 1024
+                }
+            );
+
+            stdout = result.stdout || "";
+
+        } catch (e) {
+            // Tetap baca stdout meskipun Python keluar dengan error
+            stdout = e.stdout || "";
+
+            console.error(
+                "YT-DLP PROCESS ERROR:",
+                e.stderr || e.message
+            );
+        }
+
+        console.log("PLAY OUTPUT:\n", stdout);
+
+        // AMBIL DATA DARI PYTHON
+        const getValue = (key) => {
+            const prefix = `::${key}::`;
+
+            const line = stdout
+                .split(/\r?\n/)
+                .find(line => line.startsWith(prefix));
+
+            return line
+                ? line.slice(prefix.length).trim()
+                : null;
+        };
+
+        mp3Path = getValue("SUCCESS");
+
+        const error = getValue("ERROR");
+        const title = getValue("TITLE") || query;
+        const videoUrl = getValue("URL");
+        const thumbnail = getValue("THUMB");
+        const uploader = getValue("UPLOADER") || "-";
+
+        const durationValue = parseInt(
+            getValue("DURATION") || "0",
+            10
+        );
+
+        const duration = Number.isFinite(durationValue)
+            ? durationValue
+            : 0;
+
+        // VALIDASI FILE AUDIO
+        if (!mp3Path || !fs.existsSync(mp3Path)) {
+            throw new Error(
+                error || "File audio tidak ditemukan"
+            );
+        }
+
+        // CAPTION LAGU
         const caption = `╭━━━〔 🎵 PLAY MUSIC 〕━━━⬣
+
 ┃ 🎧 Judul   : ${title}
 ┃ 📺 Channel : ${uploader}
 ┃ ⏱️ Durasi  : ${formatDuration(duration)}
 ╰━━━━━━━━━━━━━━━━⬣`;
 
-        // 📸 KIRIM THUMBNAIL
+        // KIRIM INFORMASI LAGU
         if (thumbnail) {
             await sock.sendMessage(from, {
                 image: { url: thumbnail },
                 caption
             }, { quoted: msg });
         } else {
-            await sock.sendMessage(from, { text: caption }, { quoted: msg });
+            await sock.sendMessage(from, {
+                text: caption
+            }, { quoted: msg });
         }
 
-        // 🎧 KIRIM AUDIO JIKA ADA
-        if (mp3Match) {
-            const path = mp3Match[1].trim();
+        // KIRIM AUDIO
+        const audioBuffer = fs.readFileSync(mp3Path);
 
-            if (fs.existsSync(path)) {
-                const buffer = fs.readFileSync(path);
+        await sock.sendMessage(from, {
+            audio: audioBuffer,
+            mimetype: "audio/mpeg",
+            fileName: "music.mp3"
+        }, { quoted: msg });
 
-                await sock.sendMessage(from, {
-                    audio: buffer,
-                    mimetype: "audio/mpeg",
-                    fileName: `${title}.mp3`
-                }, { quoted: msg });
-
-                fs.unlinkSync(path);
-                success = true;
-            }
-        }
+        success = true;
 
     } catch (e) {
-        console.log("❌ yt-dlp gagal");
-    }
+        console.error("PLAY ERROR:", e);
 
-    // 🔥 FALLBACK AUDIO
-    if (!success && videoUrl) {
-        try {
-            const res = await fetch(
-                `https://ytdl-api.caliphdev.com/download/audio?url=${encodeURIComponent(videoUrl)}`
-            );
+        await sock.sendMessage(from, {
+            text: `❌ Gagal memproses lagu.\n\n${e.message}`
+        }, { quoted: msg });
 
-            const json = await res.json();
-
-            if (json.result?.download_url) {
-                await sock.sendMessage(from, {
-                    audio: { url: json.result.download_url },
-                    mimetype: "audio/mpeg"
-                }, { quoted: msg });
-
-                success = true;
+    } finally {
+        // HAPUS FILE SEMENTARA
+        if (mp3Path && fs.existsSync(mp3Path)) {
+            try {
+                fs.unlinkSync(mp3Path);
+            } catch (e) {
+                console.error(
+                    "Gagal menghapus file audio:",
+                    e.message
+                );
             }
+        }
+
+        // REAKSI AKHIR
+        try {
+            await sock.sendMessage(from, {
+                react: {
+                    text: success ? "✅" : "❌",
+                    key: msg.key
+                }
+            });
         } catch (e) {
-            console.log("❌ fallback gagal");
+            console.error("Gagal mengirim reaksi:", e.message);
         }
     }
-
-    if (!success && videoUrl) {
-        await sock.sendMessage(from, {
-            text: `🎧 Tidak bisa kirim audio.\n${videoUrl}`
-        }, { quoted: msg });
-    }
-
-    await sock.sendMessage(from, {
-        react: { text: success ? "✅" : "❌", key: msg.key }
-    });
 }
 
 /* ============================================================
